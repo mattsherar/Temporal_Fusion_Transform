@@ -43,7 +43,7 @@ class TSDataset(Dataset):
             ranges = valid_sampling_locations
         
         for i, tup in enumerate(ranges):
-            if (i + 1 % 100) == 0:
+            if ((i + 1) % 100) == 0:
                 print(i + 1, 'of', max_samples, 'samples done...')
             identifier, start_idx = tup
             sliced = split_data_map[identifier].iloc[start_idx -

@@ -1,5 +1,30 @@
 from torch import nn
 import torch
+import ipdb
+
+# Loss functions.
+def pytorch_quantile_loss(y, y_pred, quantile):
+  """Computes quantile loss for pytorch.
+  Standard quantile loss as defined in the "Training Procedure" section of
+  the main TFT paper
+  Args:
+    y: Targets
+    y_pred: Predictions
+    quantile: Quantile to use for loss calculations (between 0 & 1)
+  Returns:
+    Tensor for quantile loss.
+  """
+
+  # Checks quantile
+  if quantile < 0 or quantile > 1:
+    raise ValueError(
+        'Illegal quantile value={}! Values should be between 0 and 1.'.format(
+            quantile))
+
+  prediction_underflow = y - y_pred
+  q_loss = quantile * torch.max(prediction_underflow, 0.) + (1. - quantile) * torch.max(-prediction_underflow, 0.)
+
+  return torch.sum(q_loss, axis=-1)
 
 class TimeDistributed(nn.Module):
     def __init__(self, module, batch_first=False):
@@ -138,18 +163,18 @@ class TFT(nn.Module):
         return torch.zeros(self.lstm_layers, self.batch_size, self.hidden_size, device=self.device)
         
     def apply_embedding(self, x, static_embedding):
-        ###x should have dimensions (batch_size, input_size, timesteps)
+        ###x should have dimensions (batch_size, timesteps, input_size)
         #Time-varying real embeddings 
         time_varying_real_vectors = []
         for i in range(self.time_varying_real_variables):
-            emb = self.time_varying_linear_layers[i](x[:,i,:].view(x.size(0), -1, 1))
+            emb = self.time_varying_linear_layers[i](x[:,:,i].view(x.size(0), -1, 1))
             time_varying_real_vectors.append(emb)
         time_varying_real_embedding = torch.cat(time_varying_real_vectors, dim=2)
         
          ##Time-varying categorical embeddings (ie hour)
         time_varying_categoical_vectors = []
         for i in range(self.time_varying_categoical_variables):
-            emb = self.time_varying_embedding_layers[i](x[:, self.time_varying_real_variables+i,:].view(x.size(0), -1, 1).long())
+            emb = self.time_varying_embedding_layers[i](x[:, :,self.time_varying_real_variables+i].view(x.size(0), -1, 1).long())
             time_varying_categoical_vectors.append(emb)
         time_varying_categoical_embedding = torch.cat(time_varying_categoical_vectors, dim=2)  
 
@@ -191,16 +216,15 @@ class TFT(nn.Module):
             # static
             # time_varying_categorical
             # time_varying_real
-            
         embedding_vectors = []
         for i in range(self.static_variables):
             #only need static variable from the first timestep
-            emb = self.static_embedding_layers[i](x['identifier'][:, i].to(self.device))
+            emb = self.static_embedding_layers[i](x['identifier'][:,0, i].long().to(self.device))
             embedding_vectors.append(emb)
         static_embedding = torch.cat(embedding_vectors, dim=1)
 
-        embeddings_encoder = self.apply_embedding(x['inputs'][:,:,:self.encode_length].to(self.device), static_embedding)
-        embeddings_decoder = self.apply_embedding(x['inputs'][:,:,self.encode_length:].to(self.device), static_embedding)
+        embeddings_encoder = self.apply_embedding(x['inputs'][:,:self.encode_length,:].float().to(self.device), static_embedding)
+        embeddings_decoder = self.apply_embedding(x['inputs'][:,self.encode_length:,:].float().to(self.device), static_embedding)
 
         encoder_output, hidden = self.encode(embeddings_encoder)
         decoder_output, _ = self.decode(embeddings_decoder, hidden)

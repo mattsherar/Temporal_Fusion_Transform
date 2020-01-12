@@ -2,29 +2,7 @@ from torch import nn
 import torch
 import ipdb
 
-# Loss functions.
-def pytorch_quantile_loss(y, y_pred, quantile):
-  """Computes quantile loss for pytorch.
-  Standard quantile loss as defined in the "Training Procedure" section of
-  the main TFT paper
-  Args:
-    y: Targets
-    y_pred: Predictions
-    quantile: Quantile to use for loss calculations (between 0 & 1)
-  Returns:
-    Tensor for quantile loss.
-  """
 
-  # Checks quantile
-  if quantile < 0 or quantile > 1:
-    raise ValueError(
-        'Illegal quantile value={}! Values should be between 0 and 1.'.format(
-            quantile))
-
-  prediction_underflow = y - y_pred
-  q_loss = quantile * torch.max(prediction_underflow, 0.) + (1. - quantile) * torch.max(-prediction_underflow, 0.)
-
-  return torch.sum(q_loss, axis=-1)
 
 class TimeDistributed(nn.Module):
     def __init__(self, module, batch_first=False):
@@ -118,6 +96,8 @@ class TFT(nn.Module):
         self.lstm_layers = config['lstm_layers']
         self.dropout = config['dropout']
         self.attn_heads = config['attn_heads']
+        self.num_quantiles = config['num_quantiles']
+        self.valid_quantiles = config['vailid_quantiles']
         
         self.static_embedding_layers = []
         for i in range(self.static_variables):
@@ -157,7 +137,7 @@ class TFT(nn.Module):
         
         self.multihead_attn = nn.MultiheadAttention(self.hidden_size, self.attn_heads)
         
-        self.output_layer = TimeDistributed(nn.Linear(self.hidden_size, 1), batch_first=True)
+        self.output_layer = TimeDistributed(nn.Linear(self.hidden_size, self.num_quantiles), batch_first=True)
         
     def init_hidden(self):
         return torch.zeros(self.lstm_layers, self.batch_size, self.hidden_size, device=self.device)

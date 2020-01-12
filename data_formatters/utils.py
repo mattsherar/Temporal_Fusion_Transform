@@ -18,10 +18,41 @@
 
 import os
 import pathlib
-
+import torch
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.tools.inspect_checkpoint import print_tensors_in_checkpoint_file
+
+
+
+# Loss functions.
+def pytorch_quantile_loss(y, y_pred, quantile):
+  """Computes quantile loss for tensorflow.
+
+  Standard quantile loss as defined in the "Training Procedure" section of
+  the main TFT paper
+
+  Args:
+    y: Targets
+    y_pred: Predictions
+    quantile: Quantile to use for loss calculations (between 0 & 1)
+
+  Returns:
+    Tensor for quantile loss.
+  """
+
+  # Checks quantile
+  if quantile < 0 or quantile > 1:
+    raise ValueError(
+        'Illegal quantile value={}! Values should be between 0 and 1.'.format(
+            quantile))
+
+  prediction_underflow = y - y_pred
+  q_loss = quantile * torch.max(prediction_underflow, torch.zeros_like(prediction_underflow)) + (
+      1. - quantile) * torch.max(-prediction_underflow, torch.zeros_like(prediction_underflow))
+
+  return torch.sum(q_loss, axis=-1)
+
 
 
 # Generic.

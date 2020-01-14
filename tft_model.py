@@ -111,7 +111,9 @@ class TFT(nn.Module):
         self.static_variables = config['static_variables']
         self.encode_length = config['encode_length']
         self.time_varying_categoical_variables =  config['time_varying_categoical_variables']
-        self.time_varying_real_variables =  config['time_varying_real_variables']
+        self.time_varying_real_variables_encoder =  config['time_varying_real_variables_encoder']
+        self.time_varying_real_variables_decoder =  config['time_varying_real_variables_decoder']
+        self.num_input_series_to_mask = config['num_masked_series']
         self.hidden_size = config['lstm_hidden_dimension']
         self.lstm_layers = config['lstm_layers']
         self.dropout = config['dropout']
@@ -132,20 +134,26 @@ class TFT(nn.Module):
             self.time_varying_embedding_layers.append(emb)
             
         self.time_varying_linear_layers = []
-        for i in range(self.time_varying_real_variables):
+        for i in range(self.time_varying_real_variables_encoder):
             emb = TimeDistributed(nn.Linear(1, config['embedding_dim']), batch_first=True).to(self.device)
             self.time_varying_linear_layers.append(emb)
+
         
-        self.lstm_input_size = config['embedding_dim']*(config['time_varying_real_variables'] +  
+        self.lstm_encoder_input_size = config['embedding_dim']*(config['time_varying_real_variables_encoder'] +  
                                                         config['time_varying_categoical_variables'] +
                                                         config['static_variables'])
-                                                        
-        self.lstm_encoder = nn.LSTM(input_size=self.lstm_input_size, 
+        
+        self.lstm_decoder_input_size = config['embedding_dim']*(config['time_varying_real_variables_decoder'] +  
+                                                        config['time_varying_categoical_variables'] +
+                                                        config['static_variables'])
+                                      
+
+        self.lstm_encoder = nn.LSTM(input_size=self.lstm_encoder_input_size, 
                             hidden_size=self.hidden_size,
                            num_layers=self.lstm_layers,
                            dropout=config['dropout'])
         
-        self.lstm_decoder = nn.LSTM(input_size=self.lstm_input_size,
+        self.lstm_decoder = nn.LSTM(input_size=self.lstm_decoder_input_size,
                                    hidden_size=self.hidden_size,
                                    num_layers=self.lstm_layers,
                                    dropout=config['dropout'])
@@ -162,19 +170,29 @@ class TFT(nn.Module):
     def init_hidden(self):
         return torch.zeros(self.lstm_layers, self.batch_size, self.hidden_size, device=self.device)
         
-    def apply_embedding(self, x, static_embedding):
+    def apply_embedding(self, x, static_embedding, apply_masking):
         ###x should have dimensions (batch_size, timesteps, input_size)
         #Time-varying real embeddings 
-        time_varying_real_vectors = []
-        for i in range(self.time_varying_real_variables):
-            emb = self.time_varying_linear_layers[i](x[:,:,i].view(x.size(0), -1, 1))
-            time_varying_real_vectors.append(emb)
-        time_varying_real_embedding = torch.cat(time_varying_real_vectors, dim=2)
+
+        if apply_masking:
+            time_varying_real_vectors = []
+            for i in range(self.time_varying_real_variables_decoder):
+                emb = self.time_varying_linear_layers[i+self.num_input_series_to_mask](x[:,:,i+self.num_input_series_to_mask].view(x.size(0), -1, 1))
+                time_varying_real_vectors.append(emb)
+            time_varying_real_embedding = torch.cat(time_varying_real_vectors, dim=2)
+
+        else: 
+            time_varying_real_vectors = []
+            for i in range(self.time_varying_real_variables_encoder):
+                emb = self.time_varying_linear_layers[i](x[:,:,i+self.num_input_series_to_mask].view(x.size(0), -1, 1))
+                time_varying_real_vectors.append(emb)
+            time_varying_real_embedding = torch.cat(time_varying_real_vectors, dim=2)
+        
         
          ##Time-varying categorical embeddings (ie hour)
         time_varying_categoical_vectors = []
         for i in range(self.time_varying_categoical_variables):
-            emb = self.time_varying_embedding_layers[i](x[:, :,self.time_varying_real_variables+i].view(x.size(0), -1, 1).long())
+            emb = self.time_varying_embedding_layers[i](x[:, :,self.time_varying_real_variables_encoder+i].view(x.size(0), -1, 1).long())
             time_varying_categoical_vectors.append(emb)
         time_varying_categoical_embedding = torch.cat(time_varying_categoical_vectors, dim=2)  
 
@@ -223,8 +241,8 @@ class TFT(nn.Module):
             embedding_vectors.append(emb)
         static_embedding = torch.cat(embedding_vectors, dim=1)
 
-        embeddings_encoder = self.apply_embedding(x['inputs'][:,:self.encode_length,:].float().to(self.device), static_embedding)
-        embeddings_decoder = self.apply_embedding(x['inputs'][:,self.encode_length:,:].float().to(self.device), static_embedding)
+        embeddings_encoder = self.apply_embedding(x['inputs'][:,:self.encode_length,:].float().to(self.device), static_embedding, apply_masking=False)
+        embeddings_decoder = self.apply_embedding(x['inputs'][:,self.encode_length:,:].float().to(self.device), static_embedding, apply_masking=True)
 
         encoder_output, hidden = self.encode(embeddings_encoder)
         decoder_output, _ = self.decode(embeddings_decoder, hidden)

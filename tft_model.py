@@ -65,25 +65,25 @@ class GLU(nn.Module):
 
 
 class GatedResidualNetwork(nn.Module):
-    def __init__(self, input_size, output_size, dropout, hidden_context_size=None):
+    def __init__(self, input_size, output_size, dropout, hidden_context_size=None, batch_first=False):
         super(GatedResidualNetwork, self).__init__()
         self.input_size = input_size
         self.output_size = output_size
         self.hidden_context_size = hidden_context_size
         self.dropout = dropout
         
-        self.fc1 = TimeDistributed(nn.Linear(self.input_size, self.output_size))
+        self.fc1 = TimeDistributed(nn.Linear(self.input_size, self.output_size), batch_first=batch_first)
         self.elu1 = nn.ELU()
         
         if self.hidden_context_size is not None:
-            self.context = TimeDistributed(nn.Linear(self.hidden_context_size, self.output_size))
+            self.context = TimeDistributed(nn.Linear(self.hidden_context_size, self.output_size),batch_first=batch_first)
             
-        self.fc2 = TimeDistributed(nn.Linear(self.input_size,  self.output_size))
+        self.fc2 = TimeDistributed(nn.Linear(self.input_size,  self.output_size), batch_first=batch_first)
         self.elu2 = nn.ELU()
         
         self.dropout = nn.Dropout(self.dropout)
-        self.bn = TimeDistributed(nn.BatchNorm1d(self.input_size))
-        self.gate = TimeDistributed(GLU(self.input_size))
+        self.bn = TimeDistributed(nn.BatchNorm1d(self.input_size),batch_first=batch_first)
+        self.gate = TimeDistributed(GLU(self.input_size), batch_first=batch_first)
     def forward(self, x, context=None):
         residual = x
         
@@ -173,7 +173,6 @@ class TFT(nn.Module):
     def apply_embedding(self, x, static_embedding, apply_masking):
         ###x should have dimensions (batch_size, timesteps, input_size)
         #Time-varying real embeddings 
-
         if apply_masking:
             time_varying_real_vectors = []
             for i in range(self.time_varying_real_variables_decoder):
@@ -184,7 +183,7 @@ class TFT(nn.Module):
         else: 
             time_varying_real_vectors = []
             for i in range(self.time_varying_real_variables_encoder):
-                emb = self.time_varying_linear_layers[i](x[:,:,i+self.num_input_series_to_mask].view(x.size(0), -1, 1))
+                emb = self.time_varying_linear_layers[i](x[:,:,i].view(x.size(0), -1, 1))
                 time_varying_real_vectors.append(emb)
             time_varying_real_embedding = torch.cat(time_varying_real_vectors, dim=2)
         
@@ -244,17 +243,22 @@ class TFT(nn.Module):
         embeddings_encoder = self.apply_embedding(x['inputs'][:,:self.encode_length,:].float().to(self.device), static_embedding, apply_masking=False)
         embeddings_decoder = self.apply_embedding(x['inputs'][:,self.encode_length:,:].float().to(self.device), static_embedding, apply_masking=True)
 
+
         encoder_output, hidden = self.encode(embeddings_encoder)
         decoder_output, _ = self.decode(embeddings_decoder, hidden)
         lstm_output = torch.cat([encoder_output, decoder_output], dim=0)
+
+
         static_embedding = torch.cat(lstm_output.size(0)*[static_embedding]).view(lstm_output.size(0), lstm_output.size(1), -1)
         attn_input = self.static_enrichment(lstm_output, static_embedding)
         
-        mask = self._generate_square_subsequent_mask(attn_input.size(0))
+        mask = self._generate_square_subsequent_mask(lstm_output.size(0))
         
-        attn_output, attn_output_weights = self.multihead_attn(attn_input, attn_input, lstm_output,attn_mask=mask)
+        attn_output, attn_output_weights = self.multihead_attn(lstm_output, lstm_output, lstm_output,attn_mask=mask)
         attn_output = attn_output[self.encode_length:,:,:]
-        output = self.output_layer(attn_output.view(self.batch_size, -1, self.hidden_size))
+
+        output = self.pos_wise_ff(attn_output)
+        output = self.output_layer(output.view(self.batch_size, -1, self.hidden_size))
         
         
         

@@ -63,7 +63,6 @@ class GLU(nn.Module):
         return torch.mul(sig, x)
 
 
-
 class GatedResidualNetwork(nn.Module):
     def __init__(self, input_size, output_size, dropout, hidden_context_size=None, batch_first=False):
         super(GatedResidualNetwork, self).__init__()
@@ -157,14 +156,22 @@ class TFT(nn.Module):
                                    hidden_size=self.hidden_size,
                                    num_layers=self.lstm_layers,
                                    dropout=config['dropout'])
-        
+
+        self.post_lstm_gate = TimeDistributed(GLU(self.hidden_size))
+        self.post_lstm_norm = TimeDistributed(nn.BatchNorm1d(self.hidden_size))
+
         self.static_enrichment = GatedResidualNetwork(self.hidden_size, self.hidden_size, self.dropout, config['embedding_dim']*self.static_variables)
-        
-        self.pos_wise_ff = TimeDistributed(GatedResidualNetwork(self.hidden_size, self.hidden_size, self.dropout))
         
         
         self.multihead_attn = nn.MultiheadAttention(self.hidden_size, self.attn_heads)
-        
+        self.post_attn_gate = TimeDistributed(GLU(self.hidden_size))
+
+        self.post_attn_norm = TimeDistributed(nn.BatchNorm1d(self.hidden_size, self.hidden_size))
+        self.pos_wise_ff = TimeDistributed(GatedResidualNetwork(self.hidden_size, self.hidden_size, self.dropout))
+
+        self.pre_output_norm = TimeDistributed(nn.BatchNorm1d(self.hidden_size, self.hidden_size))
+        self.pre_output_gate = TimeDistributed(GLU(self.hidden_size))
+
         self.output_layer = TimeDistributed(nn.Linear(self.hidden_size, self.num_quantiles), batch_first=True)
         
     def init_hidden(self):
@@ -248,18 +255,24 @@ class TFT(nn.Module):
         decoder_output, _ = self.decode(embeddings_decoder, hidden)
         lstm_output = torch.cat([encoder_output, decoder_output], dim=0)
 
+        lstm_output = self.post_lstm_gate(lstm_output)
 
-        static_embedding = torch.cat(lstm_output.size(0)*[static_embedding]).view(lstm_output.size(0), lstm_output.size(1), -1)
+        ##static enrichment
+        static_embedding = torch.cat(lstm_output.size(0)*[static_embedding]).view(lstm_output.size(0), lstm_output.size(1), -1)   
         attn_input = self.static_enrichment(lstm_output, static_embedding)
+        attn_input = self.post_lstm_norm(attn_input)
+
         
 
 
         mask = self._generate_square_subsequent_mask(lstm_output.size(0))
-        
         attn_output, attn_output_weights = self.multihead_attn(attn_input, attn_input, attn_input, attn_mask=mask)
+        attn_output = self.post_attn_gate(attn_output) + attn_input
+        attn_output = self.post_attn_norm(attn_output)
 
         output = self.pos_wise_ff(attn_output[self.encode_length:,:,:])
-
+        output = self.pre_output_gate(output) + lstm_output[self.encode_length:,:,:]
+        output = self.pre_output_norm(output)
         output = self.output_layer(output.view(self.batch_size, -1, self.hidden_size))
         
         

@@ -252,12 +252,14 @@ class TFT(nn.Module):
         static_embedding = torch.cat(lstm_output.size(0)*[static_embedding]).view(lstm_output.size(0), lstm_output.size(1), -1)
         attn_input = self.static_enrichment(lstm_output, static_embedding)
         
+
+
         mask = self._generate_square_subsequent_mask(lstm_output.size(0))
         
-        attn_output, attn_output_weights = self.multihead_attn(lstm_output, lstm_output, lstm_output,attn_mask=mask)
-        attn_output = attn_output[self.encode_length:,:,:]
+        attn_output, attn_output_weights = self.multihead_attn(attn_input, attn_input, attn_input, attn_mask=mask)
 
-        output = self.pos_wise_ff(attn_output)
+        output = self.pos_wise_ff(attn_output[self.encode_length:,:,:])
+
         output = self.output_layer(output.view(self.batch_size, -1, self.hidden_size))
         
         

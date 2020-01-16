@@ -169,6 +169,7 @@ class TFT(nn.Module):
         self.hidden_size = config['lstm_hidden_dimension']
         self.lstm_layers = config['lstm_layers']
         self.dropout = config['dropout']
+        self.embedding_dim = config['embedding_dim']
         self.attn_heads = config['attn_heads']
         self.num_quantiles = config['num_quantiles']
         self.valid_quantiles = config['vailid_quantiles']
@@ -190,6 +191,18 @@ class TFT(nn.Module):
             emb = TimeDistributed(nn.Linear(1, config['embedding_dim']), batch_first=True).to(self.device)
             self.time_varying_linear_layers.append(emb)
 
+        self.encoder_variable_selection = VariableSelectionNetwork(config['embedding_dim'],
+                                (config['time_varying_real_variables_encoder'] +  config['time_varying_categoical_variables']),
+                                self.hidden_size,
+                                self.dropout,
+                                config['embedding_dim'])
+
+        self.decoder_variable_selection = VariableSelectionNetwork(config['embedding_dim'],
+                                (config['time_varying_real_variables_decoder'] +  config['time_varying_categoical_variables']),
+                                self.hidden_size,
+                                self.dropout,
+                                config['embedding_dim'])
+
         
         self.lstm_encoder_input_size = config['embedding_dim']*(config['time_varying_real_variables_encoder'] +  
                                                         config['time_varying_categoical_variables'] +
@@ -200,12 +213,12 @@ class TFT(nn.Module):
                                                         config['static_variables'])
                                       
 
-        self.lstm_encoder = nn.LSTM(input_size=self.lstm_encoder_input_size, 
+        self.lstm_encoder = nn.LSTM(input_size=self.hidden_size, 
                             hidden_size=self.hidden_size,
                            num_layers=self.lstm_layers,
                            dropout=config['dropout'])
         
-        self.lstm_decoder = nn.LSTM(input_size=self.lstm_decoder_input_size,
+        self.lstm_decoder = nn.LSTM(input_size=self.hidden_size,
                                    hidden_size=self.hidden_size,
                                    num_layers=self.lstm_layers,
                                    dropout=config['dropout'])
@@ -303,6 +316,8 @@ class TFT(nn.Module):
         embeddings_encoder = self.apply_embedding(x['inputs'][:,:self.encode_length,:].float().to(self.device), static_embedding, apply_masking=False)
         embeddings_decoder = self.apply_embedding(x['inputs'][:,self.encode_length:,:].float().to(self.device), static_embedding, apply_masking=True)
 
+        embeddings_encoder, encoder_sparse_weights = self.encoder_variable_selection(embeddings_encoder[:,:,:-self.embedding_dim],embeddings_encoder[:,:,-self.embedding_dim:])
+        embeddings_decoder, decoder_sparse_weights = self.encoder_variable_selection(embeddings_decoder[:,:,:-self.embedding_dim],embeddings_decoder[:,:,-self.embedding_dim:])
 
         encoder_output, hidden = self.encode(embeddings_encoder)
         decoder_output, _ = self.decode(embeddings_decoder, hidden)

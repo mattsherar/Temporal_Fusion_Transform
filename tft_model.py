@@ -124,7 +124,7 @@ class VariableSelectionNetwork(nn.Module):
             self.flattened_grn = GatedResidualNetwork(self.num_inputs*self.input_size,self.hidden_size, self.num_inputs, self.dropout)
 
 
-        self.single_variable_grns = []
+        self.single_variable_grns = nn.ModuleList()
         for i in range(self.num_inputs):
             self.single_variable_grns.append(GatedResidualNetwork(self.input_size,self.hidden_size, self.hidden_size, self.dropout))
 
@@ -174,19 +174,19 @@ class TFT(nn.Module):
         self.num_quantiles = config['num_quantiles']
         self.valid_quantiles = config['vailid_quantiles']
         
-        self.static_embedding_layers = []
+        self.static_embedding_layers = nn.ModuleList()
         for i in range(self.static_variables):
             emb = nn.Embedding(config['static_embedding_vocab_sizes'][i], config['embedding_dim']).to(self.device)
             self.static_embedding_layers.append(emb)
         
         
         
-        self.time_varying_embedding_layers = []
+        self.time_varying_embedding_layers = nn.ModuleList()
         for i in range(self.time_varying_categoical_variables):
             emb = TimeDistributed(nn.Embedding(config['time_varying_embedding_vocab_sizes'][i], config['embedding_dim']), batch_first=True).to(self.device)
             self.time_varying_embedding_layers.append(emb)
             
-        self.time_varying_linear_layers = []
+        self.time_varying_linear_layers = nn.ModuleList()
         for i in range(self.time_varying_real_variables_encoder):
             emb = TimeDistributed(nn.Linear(1, config['embedding_dim']), batch_first=True).to(self.device)
             self.time_varying_linear_layers.append(emb)

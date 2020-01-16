@@ -312,7 +312,6 @@ class TFT(nn.Module):
             emb = self.static_embedding_layers[i](x['identifier'][:,0, i].long().to(self.device))
             embedding_vectors.append(emb)
         static_embedding = torch.cat(embedding_vectors, dim=1)
-        ipdb.set_trace()
         embeddings_encoder = self.apply_embedding(x['inputs'][:,:self.encode_length,:].float().to(self.device), static_embedding, apply_masking=False)
         embeddings_decoder = self.apply_embedding(x['inputs'][:,self.encode_length:,:].float().to(self.device), static_embedding, apply_masking=True)
 

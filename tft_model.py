@@ -323,25 +323,37 @@ class TFT(nn.Module):
         embeddings_encoder, encoder_sparse_weights = self.encoder_variable_selection(embeddings_encoder[:,:,:-self.embedding_dim],embeddings_encoder[:,:,-self.embedding_dim:])
         embeddings_decoder, decoder_sparse_weights = self.decoder_variable_selection(embeddings_decoder[:,:,:-self.embedding_dim],embeddings_decoder[:,:,-self.embedding_dim:])
 
+        lstm_input = torch.cat([embeddings_encoder,embeddings_decoder], dim=0)
+
         encoder_output, hidden = self.encode(embeddings_encoder)
         decoder_output, _ = self.decode(embeddings_decoder, hidden)
         lstm_output = torch.cat([encoder_output, decoder_output], dim=0)
 
-        lstm_output = self.post_lstm_gate(lstm_output)
+        ##skip connection over lstm
+        lstm_output = self.post_lstm_gate(lstm_output+lstm_input)
 
         ##static enrichment
         static_embedding = torch.cat(lstm_output.size(0)*[static_embedding]).view(lstm_output.size(0), lstm_output.size(1), -1)   
         attn_input = self.static_enrichment(lstm_output, static_embedding)
+
+        ##skip connection over lstm
+
         attn_input = self.post_lstm_norm(lstm_output)
 
 
         mask = self._generate_square_subsequent_mask(lstm_output.size(0))
         attn_output, attn_output_weights = self.multihead_attn(attn_input, attn_input, attn_input, attn_mask=mask)
+
+        ##skip connection over attention
         attn_output = self.post_attn_gate(attn_output) + attn_input
         attn_output = self.post_attn_norm(attn_output)
 
         output = self.pos_wise_ff(attn_output[self.encode_length:,:,:])
+
+        ##skip connection over Decoder
         output = self.pre_output_gate(output) + lstm_output[self.encode_length:,:,:]
+
+        
         output = self.pre_output_norm(output)
         output = self.output_layer(output.view(self.batch_size, -1, self.hidden_size))
         

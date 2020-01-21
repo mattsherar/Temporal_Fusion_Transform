@@ -353,12 +353,12 @@ class TFT(nn.Module):
         ##skip connection over Decoder
         output = self.pre_output_gate(output) + lstm_output[self.encode_length:,:,:]
 
-        
+
         output = self.pre_output_norm(output)
         output = self.output_layer(output.view(self.batch_size, -1, self.hidden_size))
         
         
-        return  output,encoder_output, decoder_output, attn_output, attn_output_weights,  static_embedding, embeddings_encoder, embeddings_decoder
+        return  output,encoder_output, decoder_output, attn_output, attn_output_weights
     
         
         

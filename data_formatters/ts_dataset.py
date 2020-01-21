@@ -3,6 +3,7 @@ from torch.utils.data import Dataset
 import numpy as np
 
 class TSDataset(Dataset):
+    ## Mostly adapted from original TFT Github, data_formatters
     def __init__(self,id_col, time_col, input_cols,
                  target_col, time_steps, max_samples,
                  input_size, num_encoder_steps,

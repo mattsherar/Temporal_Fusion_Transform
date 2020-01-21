@@ -1,9 +1,14 @@
+"""
+Implementation of Temporal Fusion Transformers: https://arxiv.org/abs/1912.09363
+"""
+
+
 from torch import nn
 import torch
 import ipdb
 
 class QuantileLoss(nn.Module):
-    ## add citation
+    ## From: https://medium.com/the-artificial-impostor/quantile-regression-part-2-6fdbc26b2629
     def __init__(self, quantiles):
         super().__init__()
         self.quantiles = quantiles
@@ -24,7 +29,8 @@ class QuantileLoss(nn.Module):
         return loss
 
 class TimeDistributed(nn.Module):
-    ## add citation
+    ## Takes any module and stacks the time dimension with the batch dimenison of inputs before apply the module
+    ## From: https://discuss.pytorch.org/t/any-pytorch-function-can-work-as-keras-timedistributed/1346/4
     def __init__(self, module, batch_first=False):
         super(TimeDistributed, self).__init__()
         self.module = module
@@ -49,6 +55,7 @@ class TimeDistributed(nn.Module):
         return y
 
 class GLU(nn.Module):
+    #Gated Linear Unit
     def __init__(self, input_size):
         super(GLU, self).__init__()
         
@@ -155,8 +162,6 @@ class VariableSelectionNetwork(nn.Module):
 
 class TFT(nn.Module):
     def __init__(self, config):
-        #config-embedding_vocab_sizes is list of vocabs
-        #
         super(TFT, self).__init__()
         self.device = config['device']
         self.batch_size=config['batch_size']
@@ -302,7 +307,7 @@ class TFT(nn.Module):
     
     def forward(self, x):
         ##inputs should be [batch_num, time_steps, inputs]
-        ##input dimension should be
+        ##inputs should be in this order
             # static
             # time_varying_categorical
             # time_varying_real
@@ -329,8 +334,6 @@ class TFT(nn.Module):
         attn_input = self.static_enrichment(lstm_output, static_embedding)
         attn_input = self.post_lstm_norm(lstm_output)
 
-        
-
 
         mask = self._generate_square_subsequent_mask(lstm_output.size(0))
         attn_output, attn_output_weights = self.multihead_attn(attn_input, attn_input, attn_input, attn_mask=mask)
@@ -341,7 +344,6 @@ class TFT(nn.Module):
         output = self.pre_output_gate(output) + lstm_output[self.encode_length:,:,:]
         output = self.pre_output_norm(output)
         output = self.output_layer(output.view(self.batch_size, -1, self.hidden_size))
-        
         
         
         return  output,encoder_output, decoder_output, attn_output, attn_output_weights,  static_embedding, embeddings_encoder, embeddings_decoder

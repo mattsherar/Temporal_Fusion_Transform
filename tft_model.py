@@ -124,9 +124,10 @@ class VariableSelectionNetwork(nn.Module):
         self.input_size =input_size
         self.num_inputs = num_inputs
         self.dropout = dropout
+        self.context=context
 
-        if context is not None:
-            self.flattened_grn = GatedResidualNetwork(self.num_inputs*self.input_size,self.hidden_size, self.num_inputs, self.dropout, self.input_size)
+        if self.context is not None:
+            self.flattened_grn = GatedResidualNetwork(self.num_inputs*self.input_size,self.hidden_size, self.num_inputs, self.dropout, self.context)
         else:
             self.flattened_grn = GatedResidualNetwork(self.num_inputs*self.input_size,self.hidden_size, self.num_inputs, self.dropout)
 
@@ -200,13 +201,13 @@ class TFT(nn.Module):
                                 (config['time_varying_real_variables_encoder'] +  config['time_varying_categoical_variables']),
                                 self.hidden_size,
                                 self.dropout,
-                                config['embedding_dim'])
+                                config['embedding_dim']*config['static_variables'])
 
         self.decoder_variable_selection = VariableSelectionNetwork(config['embedding_dim'],
                                 (config['time_varying_real_variables_decoder'] +  config['time_varying_categoical_variables']),
                                 self.hidden_size,
                                 self.dropout,
-                                config['embedding_dim'])
+                                config['embedding_dim']*config['static_variables'])
 
         
         self.lstm_encoder_input_size = config['embedding_dim']*(config['time_varying_real_variables_encoder'] +  
@@ -314,14 +315,14 @@ class TFT(nn.Module):
         embedding_vectors = []
         for i in range(self.static_variables):
             #only need static variable from the first timestep
-            emb = self.static_embedding_layers[i](x['identifier'][:,0, i].long().to(self.device))
+            emb = self.static_embedding_layers[i](x['identifier'][:, i].long().to(self.device))
             embedding_vectors.append(emb)
         static_embedding = torch.cat(embedding_vectors, dim=1)
         embeddings_encoder = self.apply_embedding(x['inputs'][:,:self.encode_length,:].float().to(self.device), static_embedding, apply_masking=False)
         embeddings_decoder = self.apply_embedding(x['inputs'][:,self.encode_length:,:].float().to(self.device), static_embedding, apply_masking=True)
 
-        embeddings_encoder, encoder_sparse_weights = self.encoder_variable_selection(embeddings_encoder[:,:,:-self.embedding_dim],embeddings_encoder[:,:,-self.embedding_dim:])
-        embeddings_decoder, decoder_sparse_weights = self.decoder_variable_selection(embeddings_decoder[:,:,:-self.embedding_dim],embeddings_decoder[:,:,-self.embedding_dim:])
+        embeddings_encoder, encoder_sparse_weights = self.encoder_variable_selection(embeddings_encoder[:,:,:-(self.embedding_dim*self.static_variables)],embeddings_encoder[:,:,-(self.embedding_dim*self.static_variables):])
+        embeddings_decoder, decoder_sparse_weights = self.decoder_variable_selection(embeddings_decoder[:,:,:-(self.embedding_dim*self.static_variables)],embeddings_decoder[:,:,-(self.embedding_dim*self.static_variables):])
 
         lstm_input = torch.cat([embeddings_encoder,embeddings_decoder], dim=0)
 

@@ -4,9 +4,9 @@ import numpy as np
 
 class TSDataset(Dataset):
     ## Mostly adapted from original TFT Github, data_formatters
-    def __init__(self,id_col, time_col, input_cols,
+    def __init__(self,id_col, static_cols, time_col, input_cols,
                  target_col, time_steps, max_samples,
-                 input_size, num_encoder_steps,
+                 input_size, num_encoder_steps,num_static,
                  output_size, data):
         
         self.time_steps = time_steps
@@ -32,7 +32,7 @@ class TSDataset(Dataset):
         self.inputs = np.zeros((max_samples, self.time_steps, self.input_size))
         self.outputs = np.zeros((max_samples, self.time_steps, self.output_size))
         self.time = np.empty((max_samples, self.time_steps, 1))
-        self.identifiers = np.empty((max_samples, self.time_steps, 1))
+        self.identifiers = np.empty((max_samples, num_static))
 
         if max_samples > 0 and len(valid_sampling_locations) > max_samples:
             print('Extracting {} samples...'.format(max_samples))
@@ -52,7 +52,7 @@ class TSDataset(Dataset):
             self.inputs[i, :, :] = sliced[input_cols]
             self.outputs[i, :, :] = sliced[[target_col]]
             self.time[i, :, 0] = sliced[time_col]
-            self.identifiers[i, :, 0] = sliced[id_col]
+            self.identifiers[i, :] = sliced[static_cols].iloc[0]
 
         self.sampled_data = {
             'inputs': self.inputs,

@@ -9,7 +9,9 @@ import ipdb
 
 class QuantileLoss(nn.Module):
     ## From: https://medium.com/the-artificial-impostor/quantile-regression-part-2-6fdbc26b2629
+
     def __init__(self, quantiles):
+        ##takes a list of quantiles
         super().__init__()
         self.quantiles = quantiles
         
@@ -127,14 +129,14 @@ class VariableSelectionNetwork(nn.Module):
         self.context=context
 
         if self.context is not None:
-            self.flattened_grn = GatedResidualNetwork(self.num_inputs*self.input_size,self.hidden_size, self.num_inputs, self.dropout, self.context)
+            self.flattened_grn = GatedResidualNetwork(self.num_inputs*self.input_size, self.hidden_size, self.num_inputs, self.dropout, self.context)
         else:
-            self.flattened_grn = GatedResidualNetwork(self.num_inputs*self.input_size,self.hidden_size, self.num_inputs, self.dropout)
+            self.flattened_grn = GatedResidualNetwork(self.num_inputs*self.input_size, self.hidden_size, self.num_inputs, self.dropout)
 
 
         self.single_variable_grns = nn.ModuleList()
         for i in range(self.num_inputs):
-            self.single_variable_grns.append(GatedResidualNetwork(self.input_size,self.hidden_size, self.hidden_size, self.dropout))
+            self.single_variable_grns.append(GatedResidualNetwork(self.input_size, self.hidden_size, self.hidden_size, self.dropout))
 
         self.softmax = nn.Softmax()
 
@@ -149,7 +151,7 @@ class VariableSelectionNetwork(nn.Module):
         var_outputs = []
         for i in range(self.num_inputs):
             ##select slice of embedding belonging to a single input
-            var_outputs.append(self.single_variable_grns[i](embedding[:,:,(i*self.input_size) : (i+1)*self.input_size]))
+            var_outputs.append(self.single_variable_grns[i](embedding[:,:, (i*self.input_size) : (i+1)*self.input_size]))
 
         var_outputs = torch.stack(var_outputs, axis=-1)
 
@@ -251,6 +253,7 @@ class TFT(nn.Module):
         
     def apply_embedding(self, x, static_embedding, apply_masking):
         ###x should have dimensions (batch_size, timesteps, input_size)
+        ## Apply masking is used to mask variables that should not be accessed after the encoding steps
         #Time-varying real embeddings 
         if apply_masking:
             time_varying_real_vectors = []
@@ -301,31 +304,29 @@ class TFT(nn.Module):
         
         return output, hidden
     
-    def _generate_square_subsequent_mask(self, sz):
-        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
-        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0)).to(self.device)
-        return mask
-    
+
     def forward(self, x):
-        ##inputs should be [batch_num, time_steps, inputs]
+
         ##inputs should be in this order
             # static
             # time_varying_categorical
             # time_varying_real
+
         embedding_vectors = []
         for i in range(self.static_variables):
             #only need static variable from the first timestep
             emb = self.static_embedding_layers[i](x['identifier'][:, i].long().to(self.device))
             embedding_vectors.append(emb)
+
+        ##Embedding and variable selection
         static_embedding = torch.cat(embedding_vectors, dim=1)
         embeddings_encoder = self.apply_embedding(x['inputs'][:,:self.encode_length,:].float().to(self.device), static_embedding, apply_masking=False)
         embeddings_decoder = self.apply_embedding(x['inputs'][:,self.encode_length:,:].float().to(self.device), static_embedding, apply_masking=True)
-
         embeddings_encoder, encoder_sparse_weights = self.encoder_variable_selection(embeddings_encoder[:,:,:-(self.embedding_dim*self.static_variables)],embeddings_encoder[:,:,-(self.embedding_dim*self.static_variables):])
         embeddings_decoder, decoder_sparse_weights = self.decoder_variable_selection(embeddings_decoder[:,:,:-(self.embedding_dim*self.static_variables)],embeddings_decoder[:,:,-(self.embedding_dim*self.static_variables):])
 
+        ##LSTM
         lstm_input = torch.cat([embeddings_encoder,embeddings_decoder], dim=0)
-
         encoder_output, hidden = self.encode(embeddings_encoder)
         decoder_output, _ = self.decode(embeddings_decoder, hidden)
         lstm_output = torch.cat([encoder_output, decoder_output], dim=0)
@@ -338,23 +339,21 @@ class TFT(nn.Module):
         attn_input = self.static_enrichment(lstm_output, static_embedding)
 
         ##skip connection over lstm
-
         attn_input = self.post_lstm_norm(lstm_output)
 
-
-        mask = self._generate_square_subsequent_mask(lstm_output.size(0))
-        attn_output, attn_output_weights = self.multihead_attn(attn_input, attn_input, attn_input, attn_mask=mask)
+        ##Attention
+        attn_output, attn_output_weights = self.multihead_attn(attn_input[self.encode_length:,:,:], attn_input[:self.encode_length,:,:], attn_input[:self.encode_length,:,:])
 
         ##skip connection over attention
-        attn_output = self.post_attn_gate(attn_output) + attn_input
+        attn_output = self.post_attn_gate(attn_output) + attn_input[self.encode_length:,:,:]
         attn_output = self.post_attn_norm(attn_output)
 
-        output = self.pos_wise_ff(attn_output[self.encode_length:,:,:])
+        output = self.pos_wise_ff(attn_output) #[self.encode_length:,:,:])
 
         ##skip connection over Decoder
         output = self.pre_output_gate(output) + lstm_output[self.encode_length:,:,:]
 
-
+        #Final output layers
         output = self.pre_output_norm(output)
         output = self.output_layer(output.view(self.batch_size, -1, self.hidden_size))
         

@@ -157,8 +157,8 @@ class FavoritaFormatter(data_formatters.base.GenericDataFormatter):
 
       # Format real scalers
       self._real_scalers = {}
-      for col in ['oil', 'transactions', 'log_sales']:
-        self._real_scalers[col] = (df[col].mean(), df[col].std())
+      #for col in ['oil', 'transactions', 'log_sales']:
+      #  self._real_scalers[col] = (df[col].mean(), df[col].std())
 
       self._target_scaler = (df[target_column].mean(), df[target_column].std())
 
@@ -210,12 +210,12 @@ class FavoritaFormatter(data_formatters.base.GenericDataFormatter):
         {InputTypes.ID, InputTypes.TIME})
 
     # Format real inputs
-    for col in ['log_sales', 'oil', 'transactions']:
-      mean, std = self._real_scalers[col]
-      output[col] = (df[col] - mean) / std
+    #for col in ['log_sales', 'oil', 'transactions']:
+    #  mean, std = self._real_scalers[col]
+    #  output[col] = (df[col] - mean) / std
 
-      if col == 'log_sales':
-        output[col] = output[col].fillna(0.)  # mean imputation
+      
+    output['log_sales'] = output['log_sales'].fillna(0.)  # mean imputation
 
     # Format categorical inputs
     for col in categorical_inputs:

@@ -4,6 +4,7 @@ Implementation of Temporal Fusion Transformers: https://arxiv.org/abs/1912.09363
 
 
 from torch import nn
+import math
 import torch
 import ipdb
 

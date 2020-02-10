@@ -118,6 +118,28 @@ class GatedResidualNetwork(nn.Module):
         
         return x
 
+class PositionalEncoder(torch.nn.Module):
+    def __init__(self, d_model, max_seq_len=160):
+        super().__init__()
+        self.d_model = d_model
+        pe = torch.zeros(max_seq_len, d_model)
+        for pos in range(max_seq_len):
+            for i in range(0, d_model, 2):
+                pe[pos, i] = \
+                    math.sin(pos / (10000 ** ((2 * i) / d_model)))
+                pe[pos, i + 1] = \
+                    math.cos(pos / (10000 ** ((2 * (i + 1)) / d_model)))
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        with torch.no_grad():
+            x = x * math.sqrt(self.d_model)
+            seq_len = x.size(0)
+            pe = self.pe[:, :seq_len].view(seq_len,1,self.d_model)
+            x = x + pe
+            return x
+
 class VariableSelectionNetwork(nn.Module):
     def __init__(self, input_size, num_inputs, hidden_size, dropout, context=None):
         super(VariableSelectionNetwork, self).__init__()
@@ -181,6 +203,7 @@ class TFT(nn.Module):
         self.attn_heads = config['attn_heads']
         self.num_quantiles = config['num_quantiles']
         self.valid_quantiles = config['vailid_quantiles']
+        self.seq_length = config['seq_length']
         
         self.static_embedding_layers = nn.ModuleList()
         for i in range(self.static_variables):
@@ -236,7 +259,8 @@ class TFT(nn.Module):
 
         self.static_enrichment = GatedResidualNetwork(self.hidden_size,self.hidden_size, self.hidden_size, self.dropout, config['embedding_dim']*self.static_variables)
         
-        
+        self.position_encoding = PositionalEncoder(self.hidden_size, self.seq_length)
+
         self.multihead_attn = nn.MultiheadAttention(self.hidden_size, self.attn_heads)
         self.post_attn_gate = TimeDistributed(GLU(self.hidden_size))
 
@@ -340,6 +364,7 @@ class TFT(nn.Module):
 
         ##skip connection over lstm
         attn_input = self.post_lstm_norm(lstm_output)
+        attn_input = self.position_encoding(attn_input)
 
         ##Attention
         attn_output, attn_output_weights = self.multihead_attn(attn_input[self.encode_length:,:,:], attn_input[:self.encode_length,:,:], attn_input[:self.encode_length,:,:])

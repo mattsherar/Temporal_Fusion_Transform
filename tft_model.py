@@ -351,7 +351,7 @@ class TFT(nn.Module):
         embeddings_decoder, decoder_sparse_weights = self.decoder_variable_selection(embeddings_decoder[:,:,:-(self.embedding_dim*self.static_variables)],embeddings_decoder[:,:,-(self.embedding_dim*self.static_variables):])
 
         
-        pe = self.position_encoding(torch.zeros(self.seq_length, 1, embeddings_encoder.size(2)))
+        pe = self.position_encoding(torch.zeros(self.seq_length, 1, embeddings_encoder.size(2)).to(self.device)).to(self.device)
         
         embeddings_encoder = embeddings_encoder+pe[:self.encode_length,:,:]
         embeddings_decoder = embeddings_decoder+pe[self.encode_length:,:,:]

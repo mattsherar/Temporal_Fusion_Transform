@@ -340,7 +340,7 @@ class TFT(nn.Module):
         embedding_vectors = []
         for i in range(self.static_variables):
             #only need static variable from the first timestep
-            emb = self.static_embedding_layers[i](x['identifier'][:, i].long().to(self.device))
+            emb = self.static_embedding_layers[i](x['identifier'][:,0, i].long().to(self.device))
             embedding_vectors.append(emb)
 
         ##Embedding and variable selection
@@ -350,11 +350,11 @@ class TFT(nn.Module):
         embeddings_encoder, encoder_sparse_weights = self.encoder_variable_selection(embeddings_encoder[:,:,:-(self.embedding_dim*self.static_variables)],embeddings_encoder[:,:,-(self.embedding_dim*self.static_variables):])
         embeddings_decoder, decoder_sparse_weights = self.decoder_variable_selection(embeddings_decoder[:,:,:-(self.embedding_dim*self.static_variables)],embeddings_decoder[:,:,-(self.embedding_dim*self.static_variables):])
 
-
-        pe = self.position_encoding(torch.zeros(self.seq_length, 1, self.embedding_dim))
         
-        embeddings_encoder = embeddings_encoder+pe[:-self.encode_length,:,:]
-        embeddings_decoder = embeddings_decoder+pe[-self.encode_length:,:,:]
+        pe = self.position_encoding(torch.zeros(self.seq_length, 1, embeddings_encoder.size(2)))
+        
+        embeddings_encoder = embeddings_encoder+pe[:self.encode_length,:,:]
+        embeddings_decoder = embeddings_decoder+pe[self.encode_length:,:,:]
 
         ##LSTM
         lstm_input = torch.cat([embeddings_encoder,embeddings_decoder], dim=0)

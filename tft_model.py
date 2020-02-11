@@ -350,6 +350,12 @@ class TFT(nn.Module):
         embeddings_encoder, encoder_sparse_weights = self.encoder_variable_selection(embeddings_encoder[:,:,:-(self.embedding_dim*self.static_variables)],embeddings_encoder[:,:,-(self.embedding_dim*self.static_variables):])
         embeddings_decoder, decoder_sparse_weights = self.decoder_variable_selection(embeddings_decoder[:,:,:-(self.embedding_dim*self.static_variables)],embeddings_decoder[:,:,-(self.embedding_dim*self.static_variables):])
 
+
+        pe = self.position_encoding(torch.zeros(self.seq_length, 1, self.embedding_dim))
+        
+        embeddings_encoder = embeddings_encoder+pe[:-self.encode_length,:,:]
+        embeddings_decoder = embeddings_decoder+pe[-self.encode_length:,:,:]
+
         ##LSTM
         lstm_input = torch.cat([embeddings_encoder,embeddings_decoder], dim=0)
         encoder_output, hidden = self.encode(embeddings_encoder)
@@ -365,7 +371,8 @@ class TFT(nn.Module):
 
         ##skip connection over lstm
         attn_input = self.post_lstm_norm(lstm_output)
-        attn_input = self.position_encoding(attn_input)
+
+        #attn_input = self.position_encoding(attn_input)
 
         ##Attention
         attn_output, attn_output_weights = self.multihead_attn(attn_input[self.encode_length:,:,:], attn_input[:self.encode_length,:,:], attn_input[:self.encode_length,:,:])
@@ -384,7 +391,7 @@ class TFT(nn.Module):
         output = self.output_layer(output.view(self.batch_size, -1, self.hidden_size))
         
         
-        return  output,encoder_output, decoder_output, attn_output, attn_output_weights
+        return  output,encoder_output, decoder_output, attn_output, attn_output_weights, encoder_sparse_weights, decoder_sparse_weights
     
         
         
